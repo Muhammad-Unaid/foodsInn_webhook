@@ -357,8 +357,7 @@ def webhook(request):
                                     {
                                         "type": "chips",
                                         "options": [
-                                            {"text": "🛒 Start New Order"},
-                                            {"text": "🏠 Main Menu"}
+                                            {"text": "Menu 😋🍽️"}
                                         ]
                                     }
                                 ]
