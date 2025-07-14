@@ -41,31 +41,30 @@ def webhook(request):
         #     })
 
         if "🔁 start again" in user_input.lower():
-                cart = []  # clear the cart
-
-                response_payload = {
-             "fulfillmentMessages": [
-                {
-                    "text": {
-                        "text": ["🔄 Your cart has been cleared. Let's start again!"]
-                    }
-                },
-                {
-                    "payload": {
-                        "richContent": [
-                            [
-                                {
-                                    "type": "chips",
-                                    "options": [
-                                        {"text": "🛒 Again Order"}
-                                    ]
-                                }
+            cart = []  # clear the cart
+            response_payload = {
+                "fulfillmentMessages": [
+                    {
+                        "text": {
+                            "text": ["🔄 Your cart has been cleared. Let's start again!"]
+                        }
+                    },
+                    {
+                        "payload": {
+                            "richContent": [
+                                [
+                                    {
+                                        "type": "chips",
+                                        "options": [
+                                            {"text": "🛒 Again Order"}
+                                        ]
+                                    }
+                                ]
                             ]
-                        ]
+                        }
                     }
-                }
-            ]
-        }
+                ]
+            }
 
 
 
