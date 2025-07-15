@@ -146,7 +146,7 @@ def webhook(request):
                     message_lines.append(f"{idx}. {emoji} {item} (Rs. {price})")
 
                 message_lines.append(f"💰 Total: Rs. {total_amount}")
-                message_lines.append("❌ Want to remove any item? Reply with the item number or name.")
+                message_lines.append("❌ Want to remove any item? Reply with the item number.")
 
                 response_payload = {
                     "fulfillmentMessages": [
