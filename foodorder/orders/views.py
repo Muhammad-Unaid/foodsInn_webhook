@@ -165,7 +165,7 @@ def webhook(request):
                 total_amount = 0
                 item_list = ""
 
-                for item in cart:
+                for idx, item in enumerate(cart, start=1):
                     price = get_item_price(item)
                     total_amount += price
                     emoji = "🍽️"
@@ -175,29 +175,11 @@ def webhook(request):
                         emoji = "🍟"
                     elif any(drink in item.lower() for drink in ["coke", "pepsi", "sprite", "drink"]):
                         emoji = "🥤"
-                    item_list += f"- {emoji} {item} (Rs. {price})\n"
+                    item_list += f"{idx}. {emoji} {item} (Rs. {price})\n"
 
                 response_payload = {
-                    "fulfillmentMessages": [
-                        {"text": {"text": ["🧺 Here's what you've selected:"]}},
-                        {"text": {"text": [item_list]}},
-                        {"text": {"text": [f"💰 Total: Rs. {total_amount}"]}},
-                        {"text": {"text": ["Would you like to confirm your order?"]}},
-                        {
-                            "payload": {
-                            "richContent": [[
-                                {
-                                "type": "chips",
-                                "options": [
-                                    {"text": "✅ Confirm Order"},
-                                    {"text": "🔁 Start Again"}
-                                ]
-                                }
-                            ]]
-                            }
-                        }
-                        ]
-                    }
+                    "fulfillmentText": f"🛒 Here's your cart:\n{item_list}\n💰 Total: Rs. {total_amount}\n\n❌ Want to remove any item? Reply with the item number or name."
+                }
 
         elif intent == "DeleteItemFromCart":
             item_number = parameters.get("item_number")
