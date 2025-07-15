@@ -165,7 +165,7 @@ def webhook(request):
                 total_amount = 0
                 item_list = ""
 
-                for idx, item in enumerate(cart, start=1):
+                for item in cart:
                     price = get_item_price(item)
                     total_amount += price
                     emoji = "🍽️"
@@ -175,66 +175,31 @@ def webhook(request):
                         emoji = "🍟"
                     elif any(drink in item.lower() for drink in ["coke", "pepsi", "sprite", "drink"]):
                         emoji = "🥤"
-                    item_list += f"{idx}. {emoji} {item} (Rs. {price})\n"
+                    item_list += f"- {emoji} {item} (Rs. {price})\n"
 
                 response_payload = {
-                    "fulfillmentText": f"🛒 Here's your cart:\n{item_list}\n💰 Total: Rs. {total_amount}\n\n❌ Want to remove any item? Reply with the item number or name."
-                }
+                    "fulfillmentMessages": [
+                        {"text": {"text": ["🧺 Here's what you've selected:"]}},
+                        {"text": {"text": [item_list]}},
+                        {"text": {"text": [f"💰 Total: Rs. {total_amount}"]}},
+                        {"text": {"text": ["Would you like to confirm your order?"]}},
+                        {
+                            "payload": {
+                            "richContent": [[
+                                {
+                                "type": "chips",
+                                "options": [
+                                    {"text": "✅ Confirm Order"},
+                                    {"text": "🔁 Start Again"}
+                                ]
+                                }
+                            ]]
+                            }
+                        }
+                        ]
+                    }
 
-        elif intent == "DeleteItemFromCart":
-            item_number = parameters.get("item_number")
-            item_name = parameters.get("item_name")
-            message = ""
-
-            if not cart:
-                response_payload = {"fulfillmentText": "🛒 Your cart is already empty."}
-            else:
-                removed = None
-
-                # Remove by number
-                if item_number is not None:
-                    try:
-                        index = int(item_number) - 1
-                        if 0 <= index < len(cart):
-                            removed = cart.pop(index)
-                            message += f"✅ Removed item {item_number}: {removed}\n"
-                        else:
-                            message += "⚠️ Invalid item number.\n"
-                    except:
-                        message += "⚠️ Invalid number input.\n"
-
-                # Remove by item name (partial match allowed)
-                elif item_name:
-                    for i, item in enumerate(cart):
-                        if item_name.lower() in item.lower():
-                            removed = cart.pop(i)
-                            message += f"✅ Removed: {removed}\n"
-                            break
-                    else:
-                        message += "⚠️ Item not found in cart.\n"
-
-                # Recalculate total and updated cart view
-                total = 0
-                cart_text = ""
-                for idx, item in enumerate(cart, 1):
-                    price = get_item_price(item)
-                    total += price
-                    emoji = "🍽️"
-                    if "burger" in item.lower():
-                        emoji = "🍔"
-                    elif "fries" in item.lower():
-                        emoji = "🍟"
-                    elif any(drink in item.lower() for drink in ["coke", "pepsi", "sprite", "drink"]):
-                        emoji = "🥤"
-                    cart_text += f"{idx}. {emoji} {item} (Rs. {price})\n"
-
-                if cart:
-                    message += "\n🧺 Updated Cart:\n" + cart_text
-                    message += f"\n💰 Total: Rs. {total}"
-                else:
-                    message += "\n🧺 Your cart is now empty."
-
-                response_payload = {"fulfillmentText": message}        
+                
                
         # 📋 Ask for user details
         elif intent == "OrderConfirmationIntent":
@@ -392,7 +357,8 @@ def webhook(request):
                                     {
                                         "type": "chips",
                                         "options": [
-                                            {"text": "Menu 😋🍽️"}
+                                            
+                                            {"text": "Menu"}
                                         ]
                                     }
                                 ]
@@ -406,7 +372,7 @@ def webhook(request):
         # ❓ Unknown input
         else:
             response_payload = {
-                "fulfillmentText": "❓ I didn't understand. Please choose a valid menu item or say 'Menu'."
+                "fulfillmentText": "❓ I didn't understand. Please choose a valid menu item or say 'no'."
             }
 
         return JsonResponse(response_payload)
