@@ -222,7 +222,9 @@ def webhook(request):
 
                 response_payload = {
                     "fulfillmentMessages": [
-                        {"text": {"text": [message]}},
+                        {"text": {"text": [f"✅ Removed item {int(item_number)}: {removed}"]}},
+                        {"text": {"text": [f"🧺 Updated Cart:\n{cart_text}"]}},
+                        {"text": {"text": [f"💰 Total: Rs. {total}"]}},
                         {
                             "payload": {
                                 "richContent": [[
