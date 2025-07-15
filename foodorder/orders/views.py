@@ -212,6 +212,14 @@ def webhook(request):
                 else:
                     message += "\n🧺 Your cart is now empty."
 
+                if "Your cart is now empty" in message:
+                    chip_options = [{"text": "🔁 Start Again"}]
+                else:
+                    chip_options = [
+                        {"text": "✅ Confirm Order"},
+                        {"text": "🔁 Start Again"}
+                    ]
+
                 response_payload = {
                     "fulfillmentMessages": [
                         {"text": {"text": [message]}},
@@ -220,10 +228,7 @@ def webhook(request):
                                 "richContent": [[
                                     {
                                         "type": "chips",
-                                        "options": [
-                                            {"text": "✅ Confirm Order"},
-                                            {"text": "🔁 Start Again"}
-                                        ]
+                                        "options": chip_options
                                     }
                                 ]]
                             }
