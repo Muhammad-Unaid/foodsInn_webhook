@@ -176,21 +176,21 @@ def webhook(request):
                         index = int(item_number) - 1
                         if 0 <= index < len(cart):
                             removed = cart.pop(index)
-                            message += f"✅ Removed item {int(item_number)}: {removed}"
+                            message = f"✅ Removed item:\n{item_number}. {removed}\n"
                         else:
-                            message += "⚠️ Invalid item number.\n"
+                            message = "⚠️ Invalid item number.\n"
                     except:
-                        message += "⚠️ Invalid number input.\n"
+                        message = "⚠️ Invalid number input.\n"
 
                 # Remove by item name (partial match allowed)
                 elif item_name:
                     for i, item in enumerate(cart):
                         if item_name.lower() in item.lower():
                             removed = cart.pop(i)
-                            message += f"✅ Removed: {removed}\n"
+                            message = f"✅ Removed: {removed}\n"
                             break
                     else:
-                        message += "⚠️ Item not found in cart.\n"
+                        message = "⚠️ Item not found in cart.\n"
 
                 # Recalculate and show updated cart
                 if cart:
@@ -208,7 +208,7 @@ def webhook(request):
                             emoji = "🥤"
                         cart_text += f"{idx}. {emoji} {item} (Rs. {price})\n"
 
-                    message += f"\n\n🧺 Updated Cart:\n{cart_text}\n💰 Total: Rs. {total}"
+                    message += f"\n🧺 Updated Cart:\n{cart_text}\n💰 Total: Rs. {total}"
                 else:
                     message += "\n🧺 Your cart is now empty."
 
@@ -222,9 +222,7 @@ def webhook(request):
 
                 response_payload = {
                     "fulfillmentMessages": [
-                        {"text": {"text": [f"✅ Removed item {int(item_number)}: {removed}"]}},
-                        {"text": {"text": [f"🧺 Updated Cart:\n{cart_text}"]}},
-                        {"text": {"text": [f"💰 Total: Rs. {total}"]}},
+                        {"text": {"text": [message]}},
                         {
                             "payload": {
                                 "richContent": [[
