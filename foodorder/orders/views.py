@@ -24,6 +24,7 @@ def get_item_price(title):
     return 0
 
 @csrf_exempt
+@csrf_exempt
 def webhook(request):
     global cart
 
@@ -129,6 +130,9 @@ def webhook(request):
                 total_amount = 0
                 item_list = ""
 
+                message_lines = [f"🛒 Here's your cart:"]
+                total_amount = 0
+
                 for idx, item in enumerate(cart, start=1):
                     price = get_item_price(item)
                     total_amount += price
@@ -139,11 +143,23 @@ def webhook(request):
                         emoji = "🍟"
                     elif any(drink in item.lower() for drink in ["coke", "pepsi", "sprite", "drink"]):
                         emoji = "🥤"
-                    item_list += f"{idx}. {emoji} {item} (Rs. {price})\n"
+                    message_lines.append(f"{idx}. {emoji} {item} (Rs. {price})")
+
+                message_lines.append(f"💰 Total: Rs. {total_amount}")
+                message_lines.append("❌ Want to remove any item? Reply with the item number or name.")
 
                 response_payload = {
                     "fulfillmentMessages": [
-                        {"text": {"text": [f"🛒 Here's your cart:\n{item_list}\n💰 Total: Rs. {total_amount}\n\n❌ Want to remove any item? Reply with the item number or name."]}},
+                        {
+                            "payload": {
+                                "richContent": [[
+                                    *[
+                                        { "type": "info", "title": line }
+                                        for line in message_lines if line.strip()
+                                    ]
+                                ]]
+                            }
+                        },
                         {
                             "payload": {
                                 "richContent": [[
@@ -163,7 +179,7 @@ def webhook(request):
         elif intent == "DeleteItemFromCart":
             item_number = parameters.get("item_number")
             item_name = parameters.get("item_name")
-            message = ""
+            message_lines = []  # Using a list to build message parts
 
             if not cart:
                 response_payload = {"fulfillmentText": "🛒 Your cart is already empty."}
@@ -176,26 +192,33 @@ def webhook(request):
                         index = int(item_number) - 1
                         if 0 <= index < len(cart):
                             removed = cart.pop(index)
-                            message = f"✅ Removed item:\n\n{int(item_number)}. {removed} \n\n"
+                            message_lines.extend([
+                                "✅ Removed item:",
+                                f"{int(item_number)}. {removed}",
+                                ""  # Empty line for spacing
+                            ])
                         else:
-                            message = "⚠️ Invalid item number.\n"
+                            message_lines.append("⚠️ Invalid item number.")
                     except:
-                        message = "⚠️ Invalid number input.\n"
+                        message_lines.append("⚠️ Invalid number input.")
 
-                # Remove by item name (partial match allowed)
+                # Remove by item name
                 elif item_name:
                     for i, item in enumerate(cart):
                         if item_name.lower() in item.lower():
                             removed = cart.pop(i)
-                            message = f"✅ Removed: {removed}\n"
+                            message_lines.extend([
+                                f"✅ Removed: {removed}",
+                                ""  # Empty line for spacing
+                            ])
                             break
                     else:
-                        message = "⚠️ Item not found in cart.\n"
+                        message_lines.append("⚠️ Item not found in cart.")
 
                 # Recalculate and show updated cart
                 if cart:
                     total = 0
-                    cart_text = ""
+                    cart_text = []
                     for idx, item in enumerate(cart, 1):
                         price = get_item_price(item)
                         total += price
@@ -206,11 +229,22 @@ def webhook(request):
                             emoji = "🍟"
                         elif any(drink in item.lower() for drink in ["coke", "pepsi", "sprite", "drink"]):
                             emoji = "🥤"
-                        cart_text += f"{idx}. {emoji} {item} (Rs. {price})\n"
+                        cart_text.append(f"{idx}. {emoji} {item} (Rs. {price})")
 
-                    message += f"🧺 Updated Cart:\n\n{cart_text}\n\n💰 Total: Rs. {total}"
+                    message_lines.extend([
+                        "🧺 Updated Cart:",
+                        *cart_text,
+                        "",
+                        f"💰 Total: Rs. {total}"
+                    ])
                 else:
-                    message += "\n🧺 Your cart is now empty."
+                    message_lines.extend([
+                        "",
+                        "🧺 Your cart is now empty."
+                    ])
+
+                # Join with newlines (Dialogflow will respect single newlines better)
+                message = "\n".join([line for line in message_lines if line.strip()])
 
                 if "Your cart is now empty" in message:
                     chip_options = [{"text": "🔁 Start Again"}]
@@ -220,9 +254,20 @@ def webhook(request):
                         {"text": "🔁 Start Again"}
                     ]
 
+                print(message)
+
                 response_payload = {
                     "fulfillmentMessages": [
-                        {"text": {"text": [message]}},
+                        {
+                            "payload": {
+                                "richContent": [[
+                                    *[
+                                        { "type": "info", "title": line }
+                                        for line in message_lines if line.strip()
+                                    ]
+                                ]]
+                            }
+                        },
                         {
                             "payload": {
                                 "richContent": [[
@@ -401,5 +446,5 @@ def webhook(request):
 
         return JsonResponse(response_payload)
 
-    return JsonResponse({"message": "Invalid request method"}, status=405)
-    
+    return JsonResponse({"message": "Invalid request method"}, status=405)   
+   
