@@ -176,7 +176,7 @@ def webhook(request):
                         index = int(item_number) - 1
                         if 0 <= index < len(cart):
                             removed = cart.pop(index)
-                            message = f"✅ Removed item:\n{int(item_number)}. {removed}\n\n"
+                            message = f"✅ Removed item:\n\n{int(item_number)}. {removed} \n\n"
                         else:
                             message = "⚠️ Invalid item number.\n"
                     except:
@@ -208,7 +208,7 @@ def webhook(request):
                             emoji = "🥤"
                         cart_text += f"{idx}. {emoji} {item} (Rs. {price})\n"
 
-                    message += f"🧺 Updated Cart:\n{cart_text}\n💰 Total: Rs. {total}"
+                    message += f"🧺 Updated Cart:\n\n{cart_text}\n\n💰 Total: Rs. {total}"
                 else:
                     message += "\n🧺 Your cart is now empty."
 
