@@ -176,7 +176,7 @@ def webhook(request):
                         index = int(item_number) - 1
                         if 0 <= index < len(cart):
                             removed = cart.pop(index)
-                            message += f"✅ Removed item {int(item_number)}: {removed}\n\n"
+                            message += f"✅ Removed item {int(item_number)}: {removed}"
                         else:
                             message += "⚠️ Invalid item number.\n"
                     except:
