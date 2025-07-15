@@ -33,42 +33,6 @@ def webhook(request):
         parameters = data['queryResult']['parameters']
         user_input = data['queryResult']['queryText'].lower()
         print("___", user_input)
-       
-        # if "🔁 start again" in user_input:
-        #     cart = []
-        #     return JsonResponse({
-        #         "fulfillmentText": "🔄 Your cart has been cleared. Let's start again! Please choose a category:"
-        #     })
-
-        # if "🔁 start again" in user_input.lower():
-        #     cart = []  # clear the cart
-        #     response_payload = {
-        #         "fulfillmentMessages": [
-        #             {
-        #                 "text": {
-        #                     "text": ["🔄 Your cart has been cleared. Let's start again!"]
-        #                 }
-        #             },
-        #             {
-        #                 "payload": {
-        #                     "richContent": [
-        #                         [
-        #                             {
-        #                                 "type": "chips",
-        #                                 "options": [
-        #                                     {"text": "🛒 Again Order"}
-        #                                 ]
-        #                             }
-        #                         ]
-        #                     ]
-        #                 }
-        #             }
-        #         ]
-        #     }
-
-
-
-
 
         # If user says "no" (exactly), treat intent as NoIntent
         if user_input == "no":
@@ -165,7 +129,7 @@ def webhook(request):
                 total_amount = 0
                 item_list = ""
 
-                for item in cart:
+                for idx, item in enumerate(cart, start=1):
                     price = get_item_price(item)
                     total_amount += price
                     emoji = "🍽️"
@@ -175,29 +139,26 @@ def webhook(request):
                         emoji = "🍟"
                     elif any(drink in item.lower() for drink in ["coke", "pepsi", "sprite", "drink"]):
                         emoji = "🥤"
-                    item_list += f"- {emoji} {item} (Rs. {price})\n"
+                    item_list += f"{idx}. {emoji} {item} (Rs. {price})\n"
 
                 response_payload = {
                     "fulfillmentMessages": [
-                        {"text": {"text": ["🧺 Here's what you've selected:"]}},
-                        {"text": {"text": [item_list]}},
-                        {"text": {"text": [f"💰 Total: Rs. {total_amount}"]}},
-                        {"text": {"text": ["Would you like to confirm your order?"]}},
+                        {"text": {"text": [f"🛒 Here's your cart:\n{item_list}\n💰 Total: Rs. {total_amount}\n\n❌ Want to remove any item? Reply with the item number or name."]}},
                         {
                             "payload": {
-                            "richContent": [[
-                                {
-                                "type": "chips",
-                                "options": [
-                                    {"text": "✅ Confirm Order"},
-                                    {"text": "🔁 Start Again"}
-                                ]
-                                }
-                            ]]
+                                "richContent": [[
+                                    {
+                                        "type": "chips",
+                                        "options": [
+                                            {"text": "✅ Confirm Order"},
+                                            {"text": "🔁 Start Again"}
+                                        ]
+                                    }
+                                ]]
                             }
                         }
-                        ]
-                    }
+                    ]
+                }
 
                 
                
@@ -320,18 +281,6 @@ def webhook(request):
                 "fulfillmentText": f"📩 Thank you {name}, your order has been confirmed. A confirmation email has been sent to {email}. Our rider will contact you at: {phone} and deliver your order to: {address}."
             }
 
-        # # 🔁 Reset cart
-        # elif "🔁 start again" in user_input:
-        #     cart = []
-        #     response_payload = {
-        #         "fulfillmentText": "🔄 Your cart has been cleared. You can start again by selecting items."
-        #     }
-                # 🔁 Reset cart
-        # elif "🔁 start again" in user_input:
-        #     cart = []
-        #     response_payload = {
-        #         "fulfillmentText": "🔄 Your cart has been cleared. You can start again by selecting items."
-        #     }
         elif "🔁 start again" in user_input.lower():
             cart = []  # clear the cart
             response_payload = {
