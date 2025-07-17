@@ -441,7 +441,7 @@ def webhook(request):
         # ❓ Unknown input
         else:
             response_payload = {
-                "fulfillmentText": "❓ I didn't understand. Please choose a valid menu item or say 'no'."
+                "fulfillmentText": "❓ I didn't understand. Kindly choose an option from the menu above or type "Menu" to return to the main menu. 📋✨."
             }
 
         return JsonResponse(response_payload)
