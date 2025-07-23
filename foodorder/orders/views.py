@@ -5,7 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .menu_data import price_data
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
-
+import threading
 import json
 
 cart = []
@@ -314,92 +314,207 @@ def webhook(request):
 
             items_str = ", ".join(priced_items)
             item_list_html = "".join([f"<li>{item}</li>" for item in priced_items])
-            html_content = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body {{
-                        background-color: #f4f4f4;
-                        font-family: Arial, sans-serif;
-                        padding: 20px;
-                    }}
-                    .container {{
-                        background-color: #ffffff;
-                        padding: 30px;
-                        border-radius: 10px;
-                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-                        max-width: 600px;
-                        margin: 0 auto;
-                    }}
-                    h2 {{
-                        color: #4CAF50;
-                    }}
-                    p {{
-                        font-size: 16px;
-                        color: #333333;
-                        line-height: 1.6;
-                    }}                  
-                    ul {{
-                        font-family: "Times New Roman", Times, serif;
-                        font-size: 20px;
-                        color: #333333;
-                        line-height: 1.6;
-                    }}
-                    .footer {{
-                        margin-top: 20px;
-                        font-size: 14px;
-                        color: #777777;
-                    }}
-                </style>
-            </head>
-            <body>
-                <div style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; background-color: #fce3e1; padding: 30px; border-radius: 10px; color: #333;">
-                    <div style="text-align: center;">
-                        <img src="https://foodsinn.co/_next/image?url=https%3A%2F%2Fconsole.indolj.io%2Fupload%2F1728388057-Foods-Inn-Original-Logo.png%3Fq%3D10&w=256&q=75" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
-                        <h2 style="color: #6B7564; font-size: 18px;">New Order Received!</h2>
-                    </div>
-
-                    <p><strong>Customer Name:</strong> {name}</p>
-                    <p><strong>Phone Number:</strong> {phone}</p>
-                    <p><strong>Email:</strong> <a href="mailto:{email}" style="color: #d32f2f;">{email}</a></p>
-                    <p><strong>Delivery Address:</strong> {address}</p>
-
-                    <hr style="margin: 20px 0;">
-
-                    <h3 style="color: #6B7564; font-size: 16px;">Ordered Items:</h3>
-                    <ul style="line-height: 1.6;">
-                        {item_list_html}
-                    </ul>
-
-                    <div style="margin-top: 30px; background-color: #6B7564; color: #fff; padding: 15px; border-radius: 8px; text-align: center; font-size: 33px;">
-                        <strong>Total Amount: Rs. {total_amount}</strong>
-                    </div>
-
-                    <p style="margin-top: 30px; text-align: center;">Dear {name} Thank you for your order our agent will contact your as soon as possible.</p>
-
-                    <footer style="text-align: center; margin-top: 40px; font-size: 13px;">
-                        Powered by <a href="#" style="color: #d32f2f; text-decoration: none;">FoodsInn</a> - Your Food Lover's!
-                    </footer>
-                </div>
-            </body>
-            </html>
-            """
-
-            msg = EmailMultiAlternatives(
-                subject="New Order Received",
-                body=f"Order from {name}: {items_str}. Total: Rs. {total_amount}",
-                from_email=settings.EMAIL_HOST_USER,
-                to=[restaurant_manager_email, delivery_boy_email, email],
-            )
-            msg.attach_alternative(html_content, "text/html")
-            msg.send()
-
-            cart = []
-
+            
+                # ✅ Prepare response payload first
             response_payload = {
                 "fulfillmentText": f"📩 Thank you {name}, your order has been confirmed. A confirmation email has been sent to {email}. Our rider will contact you at: {phone} and deliver your order to: {address}."
             }
+
+            print(f"\nsecond payload {response_payload}")
+
+            # ✅ Immediately return chatbot response
+            response = JsonResponse(response_payload)
+            def send_emails():
+                # HTML email content for manager + delivery boy
+                html_content = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        body {{
+                            background-color: #f4f4f4;
+                            font-family: Arial, sans-serif;
+                            padding: 20px;
+                        }}
+                        .container {{
+                            background-color: #ffffff;
+                            padding: 30px;
+                            border-radius: 10px;
+                            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                            max-width: 600px;
+                            margin: 0 auto;
+                        }}
+                        h2 {{
+                            color: #4CAF50;
+                        }}
+                        p {{
+                            font-size: 16px;
+                            color: #333333;
+                            line-height: 1.6;
+                        }}                  
+                        ul {{
+                            font-family: "Times New Roman", Times, serif;
+                            font-size: 20px;
+                            color: #333333;
+                            line-height: 1.6;
+                        }}
+                        .footer {{
+                            margin-top: 20px;
+                            font-size: 14px;
+                            color: #777777;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <div style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; background-color: #fce3e1; padding: 30px; border-radius: 10px; color: #333;">
+                        <div style="text-align: center;">
+                            <img src="https://foodsinn.co/_next/image?url=https%3A%2F%2Fconsole.indolj.io%2Fupload%2F1728388057-Foods-Inn-Original-Logo.png%3Fq%3D10&w=256&q=75" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
+                            <h2 style="color: #6B7564; font-size: 18px;">New Order Received!</h2>
+                        </div>
+
+                        <p><strong>Customer Name:</strong> {name}</p>
+                        <p><strong>Phone Number:</strong> {phone}</p>
+                        <p><strong>Email:</strong> <a href="mailto:{email}" style="color: #d32f2f;">{email}</a></p>
+                        <p><strong>Delivery Address:</strong> {address}</p>
+
+                        <hr style="margin: 20px 0;">
+
+                        <h3 style="color: #6B7564; font-size: 16px;">Ordered Items:</h3>
+                        <ul style="line-height: 1.6;">
+                            {item_list_html}
+                        </ul>
+
+                        <div style="margin-top: 30px; background-color: #6B7564; color: #fff; padding: 15px; border-radius: 8px; text-align: center; font-size: 33px;">
+                            <strong>Total Amount: Rs. {total_amount}</strong>
+                        </div>
+
+                        <p style="margin-top: 30px; text-align: center;">Dear {name} Thank you for your order our agent will contact your as soon as possible.</p>
+
+                        <footer style="text-align: center; margin-top: 40px; font-size: 13px;">
+                            Powered by <a href="#" style="color: #d32f2f; text-decoration: none;">FoodsInn</a> - Your Food Lover's!
+                        </footer>
+                    </div>
+                </body>
+                </html>
+                """
+
+                print("before all emails")
+                msg = EmailMultiAlternatives(
+                    subject="New Order Received",
+                    body=f"Order from {name}: {items_str}. Total: Rs. {total_amount}",
+                    from_email=settings.EMAIL_HOST_USER,
+                    to=[restaurant_manager_email, delivery_boy_email],
+                )
+                msg.attach_alternative(html_content, "text/html")
+                msg.send()
+
+                print("\nafter 1st email")
+
+
+                print(f"\nfirst payload {response_payload}")
+
+                # HTML email for user confirmation
+                user_html_content = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        body {{
+                            background-color: #f4f4f4;
+                            font-family: Arial, sans-serif;
+                            padding: 20px;
+                        }}
+                        .container {{
+                            background-color: #ffffff;
+                            padding: 30px;
+                            border-radius: 10px;
+                            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                            max-width: 600px;
+                            margin: 0 auto;
+                        }}
+                        h2 {{
+                            color: #4CAF50;
+                        }}
+                        p {{
+                            font-size: 16px;
+                            color: #333333;
+                            line-height: 1.6;
+                        }}                  
+                        ul {{
+                            font-family: "Times New Roman", Times, serif;
+                            font-size: 20px;
+                            color: #333333;
+                            line-height: 1.6;
+                        }}
+                        .footer {{
+                            margin-top: 20px;
+                            font-size: 14px;
+                            color: #777777;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <div class="container" style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; background-color: #fce3e1; padding: 30px; border-radius: 10px; color: #333;" >
+                        <div style="text-align: center;">
+                            <img src="https://foodsinn.co/_next/image?url=https%3A%2F%2Fconsole.indolj.io%2Fupload%2F1728388057-Foods-Inn-Original-Logo.png%3Fq%3D10&w=256&q=75" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
+                            <h2 style="color: #6B7564; font-size: 18px;">Your Order detail !</h2>
+                        </div>
+
+                        <h2>Thank You, {name}!</h2>
+                        <p>🎉 Your order has been placed successfully.</p>
+                        <p><strong>Customer Name:</strong> {name}</p>
+                        <p><strong>Phone Number:</strong> {phone}</p>
+                        <p><strong>Email:</strong> <a href="mailto:{email}" style="color: #d32f2f;">{email}</a></p>
+                        <p><strong>Delivery Address:</strong> {address}</p>
+
+                        <hr style="margin: 20px 0;">
+
+                        <h3 style="color: #6B7564; font-size: 16px;">Ordered Items:</h3>
+                        <ul style="line-height: 1.6;">
+                            {item_list_html}
+                        </ul>
+                        <div style="margin-top: 30px; background-color: #6B7564; color: #fff; padding: 15px; border-radius: 8px; text-align: center; font-size: 33px;">
+                            <strong>Total Amount: Rs. {total_amount}</strong>
+                        </div>
+
+                        <p>Dear {name} Thank you for your order 🚴 Our delivery agent will contact you shortly. Enjoy your meal!</p>
+
+                        <footer style="text-align: center; margin-top: 40px; font-size: 13px;">
+                            
+                            Powered by <a href="#" style="color: #d32f2f; text-decoration: none;">FoodsInn</a> - Your Food Lover's!
+                        </footer>
+                    </div>
+                </body>
+                </html>
+                """
+
+                print("\nbefore 2nd email")
+                user_msg = EmailMultiAlternatives(
+                    subject="Your FoodsInn Order Confirmation",
+                    body=f"Hi {name}, your order (Total Rs. {total_amount}) has been confirmed. You'll be contacted at {phone}.",
+                    from_email=settings.EMAIL_HOST_USER,
+                    to=[email],
+                )
+                user_msg.attach_alternative(user_html_content, "text/html")
+                user_msg.send()
+                print("\nafter 2nd email")
+                
+                
+
+
+            # ✅ Start email sending in background
+            threading.Thread(target=send_emails).start()
+
+            # ✅ Clear cart after order is placed
+            cart = []
+
+                
+                # response_payload = {
+                #     "fulfillmentText": f"📩 Thank you {name}, your order has been confirmed. A confirmation email has been sent to {email}. Our rider will contact you at: {phone} and deliver your order to: {address}."
+                # }
+
+            print(f"\nsecond payload {response_payload}")
+
 
         elif "🔁 start again" in user_input.lower():
             cart = []  # clear the cart
