@@ -24,7 +24,6 @@ def get_item_price(title):
     return 0
 
 @csrf_exempt
-@csrf_exempt
 def webhook(request):
     global cart
 
@@ -283,21 +282,46 @@ def webhook(request):
 
                
         # 📋 Ask for user details
-        elif intent == "OrderConfirmationIntent":
-            response_payload = {
-                "fulfillmentText": "📋 Please provide your Full Name to confirm your order."
-            }
+        # elif intent == "OrderConfirmationIntent":
+        #     response_payload = {
+        #         "fulfillmentText": "📋 Please provide your Full Name to confirm your order."
+        #     }
 
         # 📧 Send email & clear cart
-        elif intent == "CollectOrderDetailsIntent":
+        elif intent == "OrderConfirmationIntent":
             name = parameters.get('name', '').strip()
-            phone = parameters.get('phone', '').strip()
+            phone_raw = parameters.get('phone', '')
+            phone = str(phone_raw).strip() if phone_raw is not None else ''
             email = parameters.get('email', '').strip()
             raw_address = parameters.get('address', '')
             if isinstance(raw_address, list):
                 address = raw_address[0].strip() if raw_address else ''
             else:
                 address = raw_address.strip()
+
+                if not name:
+                    print("name not found")
+                    # Ask again for name without fallback
+                    return JsonResponse({
+                        "outputContexts": [
+                            {
+                                "name": f"{data['session']}/contexts/awaiting_user_details",
+                                "lifespanCount": 5
+                            }
+                        ],
+                        "fulfillmentMessages": [
+                            {
+                                "payload": {
+                                    "richContent": [[
+                                        {
+                                            "type": "info",
+                                            "title": "⚠️ I didn't catch your name. Please type your full name to continue."
+                                        }
+                                    ]]
+                                }
+                            }
+                        ]
+                    })
 
             print("+++", name)
             print("___", phone)
