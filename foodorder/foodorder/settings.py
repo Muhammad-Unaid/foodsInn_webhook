@@ -9,6 +9,10 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from pathlib import Path
 
@@ -25,7 +29,8 @@ SECRET_KEY = 'django-insecure-hpxc!kmv)gk(w4d=@h@-q6=2fi#diiqsl6xqk5x@5$#rqax(t7
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['19dc2b982098.ngrok-free.app', '127.0.0.1', 'localhost']
+# ALLOWED_HOSTS = ['d7d0090cf257.ngrok-free.app', '127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition

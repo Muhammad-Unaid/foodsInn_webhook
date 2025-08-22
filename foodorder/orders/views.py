@@ -9,6 +9,67 @@ import threading
 import json
 import re
 
+import requests
+import google.generativeai as genai 
+import os
+
+
+
+
+genai.configure(api_key="AIzaSyCK-Yn2hLj2eZ3cczkrqfLkQ0_ApHt8iuo")
+
+# ───── Helper Functions ─────
+def ask_gemini(prompt):
+    model = genai.GenerativeModel("gemini-pro")
+    response = model.generate_content(prompt)
+    return response.text
+
+
+def query_gemini(user_query, menu_dict):
+    menu_lines = [f"{item['title']} – Rs. {item['price']}"
+                  for cat in menu_dict.values() for item in cat]
+
+    # prompt = (
+    #     f"Restaurant Menu:\n" + "\n".join(menu_lines) +
+    #     f"\n\nUser asked: {user_query}\n\n"
+    #     "👉 Rules:\n"
+    #     "- Answer ONLY using the menu.\n"
+    #     "- Reply short, in Roman Urdu.\n"
+    #     "- If not found: ❌ Ye item menu me available nahi hai."
+    # )
+    # prompt = (
+    # f"Restaurant Menu:\n" + "\n".join(menu_lines) +
+    # f"\n\nUser asked: {user_query}\n\n"
+    # "👉 Rules:\n"
+    # "- Hamesha user jis language/script me question kare usi language/script me reply karo.\n"
+    # "- Agar user English me poochhe to English me reply karo.\n"
+    # "- Agar user Roman Urdu (WhatsApp style) me poochhe to Roman Urdu me reply karo.\n"
+    # "- Agar user Urdu script (ا ب ج) me poochhe to Urdu script me reply karo.\n"
+    # "- Answer short, menu se hi related ho.\n"
+    # "- Agar item menu me nahi hai to reply karo: ❌ Not available."
+    # )
+
+    prompt = (
+    f"Restaurant Menu:\n" + "\n".join(menu_lines) +
+    f"\n\nUser said: {user_query}\n\n"
+    "👉 Instructions:\n"
+    "- First, detect the language/script of the user input.\n"
+    "- Always reply in the SAME language as the user input (English, Roman Urdu, or Urdu).\n"
+    "- If the user asks about menu items, answer ONLY from the menu above.\n"
+    "- If item exists, mention it with exact price.\n"
+    "- If item does not exist in menu, reply with: ❌ Not available (in the user's language).\n"
+    "- If the user is not asking about food/menu, then answer politely in their language without using ❌ message."
+)
+
+
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    resp = model.generate_content(prompt)
+    return resp.text.strip()
+
+
+
+# ────────────────── Global Cart ──────────────────
+
 cart = []
 
 
@@ -31,7 +92,8 @@ def webhook(request):
     if request.method == 'POST':
         data = json.loads(request.body)
         intent = data['queryResult']['intent']['displayName']
-        parameters = data['queryResult']['parameters']
+        parameters = data['queryResult'].get('parameters', {})
+        # parameters = data['queryResult']['parameters']
         user_input = data['queryResult']['queryText'].lower()
         print("___", user_input)
 
@@ -43,8 +105,35 @@ def webhook(request):
 
         yes_no_responses = ["yes", "no", "✔️ yes", "no"]
 
+                     # ───────────── LLM Smart Query ─────────────
+        if intent == "LLMQueryIntent":
+            user_input_lower = user_input.lower()
+
+            # --- Fast path for cheap/expensive ---
+            if any(k in user_input_lower for k in ["cheap", "sasta", "kam", "low"]):
+                cheapest = min((item for cat in price_data.values() for item in cat),
+                               key=lambda x: x['price'])
+                reply = f"{cheapest['title']} sab se sasta hai, Rs. {cheapest['price']} ka."
+
+            elif any(k in user_input_lower for k in ["expensive", "mahanga", "high"]):
+                expensive = max((item for cat in price_data.values() for item in cat),
+                                key=lambda x: x['price'])
+                reply = f"{expensive['title']} sab se mahanga hai, Rs. {expensive['price']} ka."
+
+            else:
+                # --- LLM path ---
+                reply = query_gemini(user_input, price_data)
+
+            response_payload = {
+                "fulfillmentMessages": [
+                    {"text": {"text": [reply]}}
+                ]
+            }
+            return JsonResponse(response_payload)
+
+        # ───────────── Existing Bot Logic ─────────────
         # 🌟 Show categories
-        if intent == "ShowCategoriesIntent":
+        elif intent == "ShowCategoriesIntent":
             categories = list(price_data.keys())
             response_payload = {
                 "fulfillmentMessages": [
@@ -577,14 +666,32 @@ def webhook(request):
                 ]
             }
             
+        elif intent == "Default Fallback Intent":
+            reply = query_gemini(user_input, price_data)
+            return JsonResponse({   
+                "fulfillmentMessages": [
+                    {"text": {"text": [reply]}}
+                ]
+            })
+    
 
         # ❓ Unknown input
         else:
+            reply = query_gemini(user_input, price_data)
             response_payload = {
-                "fulfillmentText": "❓ I didn't understand. Kindly choose an option from the menu above or type 'Menu' to return to the main menu. 📋✨."
+                "fulfillmentMessages": [
+                    {"text": {"text": [reply]}}
+                ]
             }
 
         return JsonResponse(response_payload)
+        # # ❓ Unknown input
+        # else:
+        #     response_payload = {
+        #         "fulfillmentText": "❓ I didn't understand. Kindly choose an option from the menu above or type 'Menu' to return to the main menu. 📋✨."
+        #     }
+
+        # return JsonResponse(response_payload)
 
     return JsonResponse({"message": "Invalid request method"}, status=405)   
    
