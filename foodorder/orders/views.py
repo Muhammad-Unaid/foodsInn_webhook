@@ -59,7 +59,7 @@ def query_gemini(user_query, menu_dict):
     "- If item exists, mention it with exact price.\n"
     "- If item does not exist in menu, reply with: ❌ Not available (in the user's language).\n"
     "- If the user is not asking about food/menu, then answer politely in their language without using ❌ message."
-)
+    )
 
 
     model = genai.GenerativeModel("gemini-1.5-flash")
