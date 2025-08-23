@@ -66,6 +66,22 @@ def query_gemini(user_query, menu_dict):
     resp = model.generate_content(prompt)
     return resp.text.strip()
 
+def handle_price_range_query(user_input, menu_dict):
+    # Regex se numbers nikal lo
+    numbers = re.findall(r"\d+", user_input)
+    if len(numbers) >= 2:
+        low, high = map(int, numbers[:2])  # pehle do numbers ko range maan lo
+        items_in_range = []
+        for cat in menu_dict.values():
+            for item in cat:
+                if low <= item["price"] <= high:
+                    items_in_range.append(f"{item['title']} (Rs. {item['price']})")
+        
+        if items_in_range:
+            return "Range ke items:\n" + "\n".join(items_in_range)
+        else:
+            return "❌ Is price range me koi item available nahi hai."
+    return None
 
 
 # ────────────────── Global Cart ──────────────────
@@ -105,31 +121,70 @@ def webhook(request):
 
         yes_no_responses = ["yes", "no", "✔️ yes", "no"]
 
-                     # ───────────── LLM Smart Query ─────────────
+         # ───────────── LLM Smart Query ─────────────
+    
         if intent == "LLMQueryIntent":
             user_input_lower = user_input.lower()
 
-            # --- Fast path for cheap/expensive ---
-            if any(k in user_input_lower for k in ["cheap", "sasta", "kam", "low"]):
-                cheapest = min((item for cat in price_data.values() for item in cat),
-                               key=lambda x: x['price'])
-                reply = f"{cheapest['title']} sab se sasta hai, Rs. {cheapest['price']} ka."
+            # --- Step 1: Detect Price Range ---
+            range_match = re.search(r"(\d+)\s*(?:to|sa|se|–|-)\s*(\d+)", user_input_lower)
+            if range_match:
+                min_price, max_price = map(int, range_match.groups())
+                items_in_range = [
+                    f"{item['title']} (Rs. {item['price']})"
+                    for cat in price_data.values() for item in cat
+                    if min_price <= item['price'] <= max_price
+                ]
+                if items_in_range:
+                    reply = "✅ Ye items is range me available hain:\n" + "\n".join(items_in_range)
+                else:
+                    reply = f"❌ {min_price}-{max_price} ki range me koi item nahi hai."
+            
+            # --- Step 2: Cheapest item ---
+            elif any(k in user_input_lower for k in ["cheap", "sasta", "kam", "low"]):
+                cheapest = min((item for cat in price_data.values() for item in cat), key=lambda x: x['price'])
+                reply = f"{cheapest['title']} sabse sasta hai, Rs. {cheapest['price']} ka."
 
+            # --- Step 3: Expensive item ---
             elif any(k in user_input_lower for k in ["expensive", "mahanga", "high"]):
-                expensive = max((item for cat in price_data.values() for item in cat),
-                                key=lambda x: x['price'])
-                reply = f"{expensive['title']} sab se mahanga hai, Rs. {expensive['price']} ka."
+                expensive = max((item for cat in price_data.values() for item in cat), key=lambda x: x['price'])
+                reply = f"{expensive['title']} sabse mehanga hai, Rs. {expensive['price']} ka."
 
+            # --- Step 4: Otherwise ask LLM ---
             else:
                 # --- LLM path ---
                 reply = query_gemini(user_input, price_data)
 
-            response_payload = {
+            return JsonResponse({
                 "fulfillmentMessages": [
                     {"text": {"text": [reply]}}
                 ]
-            }
-            return JsonResponse(response_payload)
+            })
+
+        # if intent == "LLMQueryIntent":
+        #     user_input_lower = user_input.lower()
+
+        #     # --- Fast path for cheap/expensive ---
+        #     if any(k in user_input_lower for k in ["cheap", "sasta", "kam", "low"]):
+        #         cheapest = min((item for cat in price_data.values() for item in cat),
+        #                        key=lambda x: x['price'])
+        #         reply = f"{cheapest['title']} sab se sasta hai, Rs. {cheapest['price']} ka."
+
+        #     elif any(k in user_input_lower for k in ["expensive", "mahanga", "high"]):
+        #         expensive = max((item for cat in price_data.values() for item in cat),
+        #                         key=lambda x: x['price'])
+        #         reply = f"{expensive['title']} sab se mahanga hai, Rs. {expensive['price']} ka."
+
+        #     else:
+        #         # --- LLM path ---
+        #         reply = query_gemini(user_input, price_data)
+
+        #     response_payload = {
+        #         "fulfillmentMessages": [
+        #             {"text": {"text": [reply]}}
+        #         ]
+        #     }
+        #     return JsonResponse(response_payload)
 
         # ───────────── Existing Bot Logic ─────────────
         # 🌟 Show categories
