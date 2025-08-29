@@ -9,68 +9,350 @@ import threading
 import json
 import re
 
-import requests
 import google.generativeai as genai 
 import os
 
+import requests
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import time
+
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+from dotenv import load_dotenv
+import threading, time
+from difflib import get_close_matches
+from langdetect import detect
+
+
+# ───── Load ENV ─────
+load_dotenv()
+#-----------------------Gemini API ko configure karta hai.--------
+genai.configure(api_key="AIzaSyD2O9-NCQXiVv-L0EKX4bfGAoyaszvL7GY")
+
+
+#global memory jaha website aur FAQ ka scraped data store hota hai----
+website_cache = ""
+faq_cache = ""
+
+# --- 2. Scrapers & Cache --- start------------------------------------------
+# --- website scraper --- ( Static HTML scrape karta hai (scripts/styles remove karke saara text return karta hai).)
+def scrape_website(url: str)-> str:
+    """Website ka full text scrape karega"""
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        for script in soup(["script", "style"]):
+            script.extract()
+
+        text = soup.get_text(separator=" ")
+        return " ".join(text.split())  # clean spaces
+    except Exception as e:
+        return f"⚠️ Error scraping website: {e}"
+# --- website scraper ---end ------------
+
+#-------------scrape faqs----------(Website ke FAQ page se Q/A pairs nikalta hai (headings + unke answers).)
+def scrape_faqs(url: str) -> str:
+    """
+    Scrapes FAQs from FoodsInn FAQ page.
+    Detects Q/A pairs from headings (h2, h3, h4, strong, b) and 
+    their immediate next <p> or text sibling as the answer.
+    Returns clean string for LLM.
+    """
+    try:
+        resp = requests.get(url, timeout=12)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        faqs = []
+
+        # Possible tags used for FAQ questions
+        question_tags = soup.find_all(["h2", "h3", "h4", "strong", "b"])
+
+        for q_tag in question_tags:
+            question = q_tag.get_text(" ", strip=True)
+
+            # Filters: skip irrelevant headings
+            if not question or len(question) < 5:
+                continue
+            if "faq" in question.lower():
+                continue
+
+            # Answer = first <p> after question tag
+            answer_tag = q_tag.find_next(["p", "div"])
+            answer = answer_tag.get_text(" ", strip=True) if answer_tag else ""
+
+            # Only keep if answer looks meaningful
+            if len(answer) > 3:
+                faqs.append(f"Q: {question}\nA: {answer}")
+
+        return "\n\n".join(faqs) if faqs else "❌ FAQs not found while scraping."
+
+    except Exception as e:
+        return f"⚠️ Error scraping FAQs: {e}"
+#-------------scrape faqs----------end----
+
+#------------scrape dynamic website------ (Selenium + Chrome use karke dynamic (JS-based) website ka content load karke scrape karta hai.⚠️ Ye thoda heavy hai, isliye real-time query me use nahi hota, sirf cache fill karne ke liye.)
+def scrape_dynamic_website(url: str) -> str:
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    driver = webdriver.Chrome(options=options)
+    driver.get(url)
+
+    try:
+        # ✅ wait until BODY loads or any FAQ keyword is present
+        WebDriverWait(driver, 12).until(
+            EC.presence_of_all_elements_located((By.TAG_NAME, "body"))
+        )
+        time.sleep(2)  # thoda extra wait for JS content
+    except Exception as e:
+        print("⚠️ Page load wait failed:", e)
+
+    html = driver.page_source
+    driver.quit()
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # ✅ Clean scripts/styles
+    for script in soup(["script", "style"]):
+        script.extract()
+
+    text = soup.get_text(separator=" ")
+    return " ".join(text.split())
+#------------scrape dynamic website------ end ----
+
+#----------refresh cache---------- (Website aur FAQs ko scrape karke global website_cache aur faq_cache update karta hai.)
+def refresh_cache():
+    global website_cache, faq_cache
+    try:
+        # website_cache = scrape_website("https://foodsinn.co/")  
+        # faq_cache = scrape_faqs("https://foodsinn.co/pages/frequently-asked-questions")
+        
+        website_cache = scrape_dynamic_website("https://foodsinn.co/")
+        faq_cache = scrape_dynamic_website("https://foodsinn.co/pages/frequently-asked-questions")
+
+
+        print("✅ Cache refreshed")
+        print(f"Website cache length: {len(website_cache)} chars")
+        print(f"FAQ cache length: {len(faq_cache)} chars")
+
+        # Preview first 500 characters
+        print("\nWebsite cache sample:", website_cache[:500])
+        print("\nFAQ cache sample:", faq_cache[:500])
+
+    except Exception as e:
+        print("⚠️ Cache refresh failed:", e)
+
+#----------refresh cache---------- end -------
+
+# ✅ ab yaha safe hai
+refresh_cache()
+
+# -----------------Har 10 min me refresh----------(Background thread me har 10 min ke baad refresh_cache() run karta hai (data fresh banaye rakhne ke liye).)
+def auto_refresh():
+    while True:
+        refresh_cache()
+        time.sleep(600)  # 10 minutes
+threading.Thread(target=auto_refresh, daemon=True).start()
+# -----------------Har 10 min me refresh----------end---------
+
+# --- 2. Scrapers & Cache --- end----------------------------------------------------
 
 
 
-genai.configure(api_key="AIzaSyCK-Yn2hLj2eZ3cczkrqfLkQ0_ApHt8iuo")
-
-# ───── Helper Functions ─────
-def ask_gemini(prompt):
-    model = genai.GenerativeModel("gemini-pro")
-    response = model.generate_content(prompt)
-    return response.text
+# --- 4. Gemini Query Functions ----------------start-----------------
 
 
-def query_gemini(user_query, menu_dict):
-    menu_lines = [f"{item['title']} – Rs. {item['price']}"
-                  for cat in menu_dict.values() for item in cat]
 
+def query_faq_direct(user_query):
+    """
+    Fast FAQ lookup (without Gemini).
+    Uses fuzzy matching for closest question in faq_cache.
+    """
+
+    # Split cached FAQs
+    faqs = faq_cache.split("\n\n")
+    questions = [f.split("\nA:")[0].replace("Q: ", "").strip() 
+                 for f in faqs if f.startswith("Q:")]
+
+    # Case-insensitive matching
+    questions_lower = [q.lower() for q in questions]
+    match = get_close_matches(user_query.lower(), questions_lower, n=1, cutoff=0.5)
+
+    if match:
+        matched_q = questions[questions_lower.index(match[0])]
+        for f in faqs:
+            if f.startswith(f"Q: {matched_q}"):
+                answer = f.split("\nA:")[1].strip()
+                return f"{matched_q} → {answer}"
+
+    return "❌ Ye info FAQs me available nahi hai."
+
+
+#Yeh main function hai jo smartly decide karta hai:
+#Pehle menu dict check kare
+#Agar menu me na mile to FAQs cache check kar
+#Agar FAQs me bhi na mile to website cache check kare
+#Reply user ki language me deta hai.
+#👉 Yehi aapka chatbot ka core intelligence hai.
+
+#-----------smart query handler-----------
+
+def smart_query_handler(user_query, menu_dict):
+    """
+    Fast + fallback approach:
+    1. Direct FAQ fuzzy match (fast)
+    2. Direct menu check
+    3. Direct website keyword search
+    4. If all fail → Gemini (with 3 sec timeout)
+    """
+
+    # ✅ Step 1: Direct FAQ fuzzy match
+    faq_direct = query_faq_direct(user_query)
+    if "❌" not in faq_direct:
+        return faq_direct  # Found answer in FAQ cache
+
+    # ✅ Step 2: Direct menu check (price lookup)
+    for cat_items in menu_dict.values():
+        for item in cat_items:
+            if item["title"].lower() in user_query.lower():
+                return f"{item['title']} ki price Rs. {item['price']} hai."
+
+    # ✅ Step 3: Website keyword search (basic)
+    if user_query.lower() in website_cache.lower():
+        # Return a small relevant snippet from website_cache
+        idx = website_cache.lower().find(user_query.lower())
+        snippet = website_cache[idx:idx+150]
+        return f"Website info: {snippet}..."
+
+    # ✅ Step 4: Gemini fallback (with 3 sec timeout)
     # prompt = (
-    #     f"Restaurant Menu:\n" + "\n".join(menu_lines) +
-    #     f"\n\nUser asked: {user_query}\n\n"
-    #     "👉 Rules:\n"
-    #     "- Answer ONLY using the menu.\n"
-    #     "- Reply short, in Roman Urdu.\n"
-    #     "- If not found: ❌ Ye item menu me available nahi hai."
+    #     f"Menu:\n{chr(10).join([f'{i['title']} – Rs. {i['price']}' for cat in menu_dict.values() for i in cat])}\n\n"
+    #     f"FAQs:\n{faq_cache}\n\n"
+    #     f"Website:\n{website_cache[:3000]}\n\n"
+    #     f"User Question: {user_query}\n\n"
+    #     "Rules:\n"
+    #     "- Answer from menu, FAQ, or website.\n"
+    #     "- Reply in the same language as user.\n"
+    #     "- If not found, reply: ❌ Info not available.\n"
     # )
-    # prompt = (
-    # f"Restaurant Menu:\n" + "\n".join(menu_lines) +
-    # f"\n\nUser asked: {user_query}\n\n"
-    # "👉 Rules:\n"
-    # "- Hamesha user jis language/script me question kare usi language/script me reply karo.\n"
-    # "- Agar user English me poochhe to English me reply karo.\n"
-    # "- Agar user Roman Urdu (WhatsApp style) me poochhe to Roman Urdu me reply karo.\n"
-    # "- Agar user Urdu script (ا ب ج) me poochhe to Urdu script me reply karo.\n"
-    # "- Answer short, menu se hi related ho.\n"
-    # "- Agar item menu me nahi hai to reply karo: ❌ Not available."
-    # )
+
+    # Detect script for user query
+    script_type = detect_script(user_query)
+
+    if script_type == "roman":
+        language_rule = "Reply ONLY in Roman Urdu (no Urdu script, no English sentences)."
+    elif script_type == "urdu":
+        language_rule = "Reply ONLY in Urdu script."
+    else:
+        language_rule = "Reply ONLY in English."
+
+    # Prepare Gemini prompt with strict language rule
+    menu_text = "\n".join([f"{i['title']} – Rs. {i['price']}" for cat in menu_dict.values() for i in cat])
 
     prompt = (
-    f"Restaurant Menu:\n" + "\n".join(menu_lines) +
-    f"\n\nUser said: {user_query}\n\n"
-    "👉 Instructions:\n"
-    "- First, detect the language/script of the user input.\n"
-    "- Always reply in the SAME language as the user input (English, Roman Urdu, or Urdu).\n"
-    "- If the user asks about menu items, answer ONLY from the menu above.\n"
-    "- If item exists, mention it with exact price.\n"
-    "- If item does not exist in menu, reply with: ❌ Not available (in the user's language).\n"
-    "- If the user is not asking about food/menu, then answer politely in their language without using ❌ message."
+        f"Menu:\n{menu_text}\n\n"
+        f"FAQs:\n{faq_cache}\n\n"
+        f"Website:\n{website_cache[:3000]}\n\n"
+        f"User Question: {user_query}\n\n"
+        f"Rules:\n"
+        f"- Answer from menu, FAQ, or website.\n"
+        f"- {language_rule}\n"
+        "- Keep reply short and natural.\n"
+        "- If not found, reply: ❌ Info not available.\n"
     )
 
+
+    resp = safe_llm_call(prompt, timeout=3)
+    if resp and "❌" not in resp:
+        return resp
+
+    # ✅ Final fallback
+    return "⚠️ Sorry, mujhe abhi iska exact jawab nahi mila. Please dobara poochhiye."
+
+
+#-----------smart query handle ------ end -----
+
+
+def detect_script(text):
+    urdu_chars = re.compile(r'[\u0600-\u06FF]')  # Urdu Unicode range
+    if urdu_chars.search(text):
+        return "urdu"
+    elif re.search(r'[a-zA-Z]', text):
+        return "roman"  # assume Roman Urdu or English
+    return "english"
+
+
+#------(FAQs ke against sirf Gemini query karta hai. (Backup/debugging ke liye useful))
+def query_gemini_with_faq(user_query, url):
+    # faq_data = scrape_faqs(url)
+    faq_data = faq_cache  # use cache directly
+    prompt = (
+        f"Website FAQs:\n{faq_data}\n\n"
+        f"User asked: {user_query}\n\n"
+       "👉 Rules:\n"
+        "- Match user question with the most similar FAQ question above.\n"
+        "- Always give the paired answer if question matches semantically.\n"
+        "- Reply in the same language user used.\n"
+        "- If nothing relevant found: ❌ Ye info FAQs me available nahi hai.(in the user's language)"
+    )
 
     model = genai.GenerativeModel("gemini-1.5-flash")
     resp = model.generate_content(prompt)
     return resp.text.strip()
 
+# ---------ask gemini---------(Ek generic Gemini call (free-style prompt ke liye). Mostly testing / debugging ke liye.)
+def ask_gemini(prompt):
+    model = genai.GenerativeModel("gemini-pro")
+    response = model.generate_content(prompt)
+    return response.text
+# --- 4. Gemini Query Functions ----------------end-----------------
+
+import concurrent.futures
+
+def safe_llm_call(prompt, timeout=4):
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(lambda: model.generate_content(prompt).text)
+        try:
+            return future.result(timeout=timeout).strip()
+        except concurrent.futures.TimeoutError:
+            return "⚠️ Sorry, reply slow ho raha hai. Kripya dobara poochhiye."
+
+
+
+
+
+
+
+cart = []
+
+restaurant_manager_email = 'softcodix1@gmail.com'  # Manager's email
+delivery_boy_email = '1aryankhan1100@gmail.com'  # Delivery boy's email
+
+# --- 3. Helpers ---------------------start----------------------------
+#----get_item_price(title)----------Menu (price_data) me se kisi item ka price return karta hai.--(Cart / order system ke liye useful).
+def get_item_price(title):
+    for category_items in price_data.values():
+        for item in category_items:
+            if item["title"].lower() == title.lower():
+                return item["price"]
+    return 0
+
+
+# User ke input me agar numbers (low–high range) diye gaye hain, to us range ke andar ke menu items return karta hai.
 def handle_price_range_query(user_input, menu_dict):
-    # Regex se numbers nikal lo
     numbers = re.findall(r"\d+", user_input)
     if len(numbers) >= 2:
-        low, high = map(int, numbers[:2])  # pehle do numbers ko range maan lo
+        low, high = map(int, numbers[:2])  
         items_in_range = []
         for cat in menu_dict.values():
             for item in cat:
@@ -82,24 +364,9 @@ def handle_price_range_query(user_input, menu_dict):
         else:
             return "❌ Is price range me koi item available nahi hai."
     return None
+from difflib import get_close_matches
+# --- 3. Helpers --------------------------------- end----------------------------
 
-
-# ────────────────── Global Cart ──────────────────
-
-cart = []
-
-
-
-restaurant_manager_email = 'softcodix1@gmail.com'  # Manager's email
-delivery_boy_email = '1aryankhan1100@gmail.com'  # Delivery boy's email
-
-
-def get_item_price(title):
-    for category_items in price_data.values():
-        for item in category_items:
-            if item["title"].lower() == title.lower():
-                return item["price"]
-    return 0
 
 @csrf_exempt
 def webhook(request):
@@ -111,7 +378,10 @@ def webhook(request):
         parameters = data['queryResult'].get('parameters', {})
         # parameters = data['queryResult']['parameters']
         user_input = data['queryResult']['queryText'].lower()
+        user_input_lower = user_input.lower()
         print("___", user_input)
+
+        reply = "⚠️ Sorry, samajh nahi paya."
 
         # If user says "no" (exactly), treat intent as NoIntent
         if user_input == "no":
@@ -121,72 +391,66 @@ def webhook(request):
 
         yes_no_responses = ["yes", "no", "✔️ yes", "no"]
 
-         # ───────────── LLM Smart Query ─────────────
-    
+
         if intent == "LLMQueryIntent":
-            user_input_lower = user_input.lower()
+            if "website" in user_input_lower or "foods inn" in user_input_lower:
 
-            # --- Step 1: Detect Price Range ---
-            range_match = re.search(r"(\d+)\s*(?:to|sa|se|–|-)\s*(\d+)", user_input_lower)
-            if range_match:
-                min_price, max_price = map(int, range_match.groups())
-                items_in_range = [
-                    f"{item['title']} (Rs. {item['price']})"
-                    for cat in price_data.values() for item in cat
-                    if min_price <= item['price'] <= max_price
-                ]
-                if items_in_range:
-                    reply = "✅ Ye items is range me available hain:\n" + "\n".join(items_in_range)
-                else:
-                    reply = f"❌ {min_price}-{max_price} ki range me koi item nahi hai."
-            
-            # --- Step 2: Cheapest item ---
+                print("---- Website mode ----")
+                print("Scraped:", scrape_website(website_cache)[:300])
+
+                # reply = query_gemini_with_website(user_input, WEBSITE_URL)
+                reply = smart_query_handler(user_input, price_data)
             elif any(k in user_input_lower for k in ["cheap", "sasta", "kam", "low"]):
-                cheapest = min((item for cat in price_data.values() for item in cat), key=lambda x: x['price'])
-                reply = f"{cheapest['title']} sabse sasta hai, Rs. {cheapest['price']} ka."
+                # Cheapest
+                all_items = [item for cat in price_data.values() for item in cat]
+                cheapest = min(all_items, key=lambda x: x['price'])
+                reply = f"{cheapest['title']} sab se sasta hai, Rs. {cheapest['price']} ka."
 
-            # --- Step 3: Expensive item ---
             elif any(k in user_input_lower for k in ["expensive", "mahanga", "high"]):
-                expensive = max((item for cat in price_data.values() for item in cat), key=lambda x: x['price'])
-                reply = f"{expensive['title']} sabse mehanga hai, Rs. {expensive['price']} ka."
+                # Most expensive
+                all_items = [item for cat in price_data.values() for item in cat]
+                expensive = max(all_items, key=lambda x: x['price'])
+                reply = f"{expensive['title']} sab se mahanga hai, Rs. {expensive['price']} ka."
 
-            # --- Step 4: Otherwise ask LLM ---
+            elif "range" in user_input_lower or "between" in user_input_lower:
+                # Custom price range
+                nums = [int(n) for n in re.findall(r"\d+", user_input_lower)]
+                if len(nums) >= 2:
+                    low, high = nums[0], nums[1]
+                    items_in_range = [
+                        f"{i['title']} – Rs.{i['price']}"
+                        for cat in price_data.values() for i in cat
+                        if low <= i['price'] <= high
+                    ]
+                    reply = "\n".join(items_in_range) if items_in_range else "❌ Is range me item nahi mila."
+                else:
+                    # reply = query_gemini_with_menu(user_input, price_data)
+                    reply = smart_query_handler(user_input, price_data)
             else:
-                # --- LLM path ---
-                reply = query_gemini(user_input, price_data)
+                # reply = query_gemini_with_menu(user_input, price_data)
+                 reply = smart_query_handler(user_input, price_data)
 
-            return JsonResponse({
+            response_payload = {
                 "fulfillmentMessages": [
                     {"text": {"text": [reply]}}
                 ]
-            })
+            }
+            return JsonResponse(response_payload)
+        # 🌐 Website scraping + FAQ fallback
+                
+        elif intent == "Default Fallback Intent":
+            reply = smart_query_handler(user_input, price_data)
+            response_payload = {
+                "fulfillmentMessages": [
+                    {"text": {"text": [reply]}}
+                ]
+            }
+            return JsonResponse(response_payload)
 
-        # if intent == "LLMQueryIntent":
-        #     user_input_lower = user_input.lower()
 
-        #     # --- Fast path for cheap/expensive ---
-        #     if any(k in user_input_lower for k in ["cheap", "sasta", "kam", "low"]):
-        #         cheapest = min((item for cat in price_data.values() for item in cat),
-        #                        key=lambda x: x['price'])
-        #         reply = f"{cheapest['title']} sab se sasta hai, Rs. {cheapest['price']} ka."
-
-        #     elif any(k in user_input_lower for k in ["expensive", "mahanga", "high"]):
-        #         expensive = max((item for cat in price_data.values() for item in cat),
-        #                         key=lambda x: x['price'])
-        #         reply = f"{expensive['title']} sab se mahanga hai, Rs. {expensive['price']} ka."
-
-        #     else:
-        #         # --- LLM path ---
-        #         reply = query_gemini(user_input, price_data)
-
-        #     response_payload = {
-        #         "fulfillmentMessages": [
-        #             {"text": {"text": [reply]}}
-        #         ]
-        #     }
-        #     return JsonResponse(response_payload)
 
         # ───────────── Existing Bot Logic ─────────────
+
         # 🌟 Show categories
         elif intent == "ShowCategoriesIntent":
             categories = list(price_data.keys())
@@ -426,11 +690,7 @@ def webhook(request):
                 }
 
                
-        # 📋 Ask for user details
-        # elif intent == "OrderConfirmationIntent":
-        #     response_payload = {
-        #         "fulfillmentText": "📋 Please provide your Full Name to confirm your order."
-        #     }
+
 
         # 📧 Send email & clear cart
         elif intent == "OrderConfirmationIntent":
@@ -720,19 +980,21 @@ def webhook(request):
                     }
                 ]
             }
-            
-        elif intent == "Default Fallback Intent":
-            reply = query_gemini(user_input, price_data)
-            return JsonResponse({   
-                "fulfillmentMessages": [
-                    {"text": {"text": [reply]}}
-                ]
-            })
+
+        # elif intent == "Default Fallback Intent":
+        #     reply = query_gemini(user_input, price_data)
+        #     return JsonResponse({   
+        #         "fulfillmentMessages": [
+        #             {"text": {"text": [reply]}}
+        #         ]
+        #     })
     
 
         # ❓ Unknown input
         else:
-            reply = query_gemini(user_input, price_data)
+            #reply = query_gemini(user_input, price_data)
+            reply = smart_query_handler(user_input, price_data)
+            
             response_payload = {
                 "fulfillmentMessages": [
                     {"text": {"text": [reply]}}
@@ -740,13 +1002,6 @@ def webhook(request):
             }
 
         return JsonResponse(response_payload)
-        # # ❓ Unknown input
-        # else:
-        #     response_payload = {
-        #         "fulfillmentText": "❓ I didn't understand. Kindly choose an option from the menu above or type 'Menu' to return to the main menu. 📋✨."
-        #     }
-
-        # return JsonResponse(response_payload)
 
     return JsonResponse({"message": "Invalid request method"}, status=405)   
    
