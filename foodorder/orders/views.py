@@ -160,7 +160,7 @@ refresh_cache()
 def auto_refresh():
     while True:
         refresh_cache()
-        time.sleep(600)  # 10 minutes
+        time.sleep(86400)  # daily refresh
 threading.Thread(target=auto_refresh, daemon=True).start()
 # -----------------Har 10 min me refresh----------end---------
 
@@ -220,11 +220,24 @@ def smart_query_handler(user_query, menu_dict):
     if "❌" not in faq_direct:
         return faq_direct  # Found answer in FAQ cache
 
-    # ✅ Step 2: Direct menu check (price lookup)
+    # ✅ Step 2a: Direct price range query
+    nums = [int(n) for n in re.findall(r"\d+", user_query)]
+    if len(nums) >= 2:
+        low, high = nums[0], nums[1]
+        items_in_range = [
+            f"{i['title']} – Rs.{i['price']}"
+            for cat in menu_dict.values() for i in cat
+            if low <= i['price'] <= high
+        ]
+        if items_in_range:
+            return "Range ke items:\n" + "\n".join(items_in_range)
+
+    # ✅ Step 2b: Direct item price lookup
     for cat_items in menu_dict.values():
         for item in cat_items:
             if item["title"].lower() in user_query.lower():
                 return f"{item['title']} ki price Rs. {item['price']} hai."
+
 
     # ✅ Step 3: Website keyword search (basic)
     if user_query.lower() in website_cache.lower():
@@ -396,7 +409,9 @@ def webhook(request):
             if "website" in user_input_lower or "foods inn" in user_input_lower:
 
                 print("---- Website mode ----")
-                print("Scraped:", scrape_website(website_cache)[:300])
+                # print("Scraped:", scrape_website(website_cache)[:300])
+                print("Scraped:", website_cache[:300])
+
 
                 # reply = query_gemini_with_website(user_input, WEBSITE_URL)
                 reply = smart_query_handler(user_input, price_data)
