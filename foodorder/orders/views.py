@@ -877,7 +877,7 @@ def webhook(request):
                 <body>
                     <div style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; background-color: #fce3e1; padding: 30px; border-radius: 10px; color: #333;">
                         <div style="text-align: center;">
-                            <img src="https://drive.google.com/file/d/11tl-_2Z3KAiJa8dqR9pZ8oAEPfMEeZ_-/view?usp=sharing" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
+                            <img src="https://drive.google.com/file/d/11tl-_2Z3KAiJa8dqR9pZ8oAEPfMEeZ_-/view?pli=1" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
                             <h2 style="color: #6B7564; font-size: 18px;">New Order Received!</h2>
                         </div>
 
@@ -965,7 +965,7 @@ def webhook(request):
                 <body>
                     <div class="container" style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; background-color: #fce3e1; padding: 30px; border-radius: 10px; color: #333;" >
                         <div style="text-align: center;">
-                            <img src="https://drive.google.com/file/d/11tl-_2Z3KAiJa8dqR9pZ8oAEPfMEeZ_-/view?usp=sharing" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
+                            <img src="https://drive.google.com/file/d/11tl-_2Z3KAiJa8dqR9pZ8oAEPfMEeZ_-/view?pli=1" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
                             <h2 style="color: #6B7564; font-size: 18px;">Your Order detail !</h2>
                         </div>
 
