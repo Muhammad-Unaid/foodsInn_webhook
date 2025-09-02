@@ -294,6 +294,56 @@ def smart_query_handler(user_query, menu_dict):
 
 #-----------smart query handle ------ end -----
 
+def query_gemini(user_query, menu_dict):
+    """
+    Agar jawab menu/faq/website me mil jaye toh wahi return kare.
+    Agar na mile toh Gemini se polite alternative reply return kare.
+    """
+
+    # --- Step 1: Menu check ---
+    for cat in menu_dict.values():
+        for item in cat:
+            if item["title"].lower() in user_query.lower():
+                return f"{item['title']} ki price Rs. {item['price']} hai."
+
+    # --- Step 2: FAQ direct check ---
+    faq_direct = query_faq_direct(user_query)
+    if "❌" not in faq_direct:
+        return faq_direct
+
+    # --- Step 3: Website cache check ---
+    if user_query.lower() in website_cache.lower():
+        idx = website_cache.lower().find(user_query.lower())
+        snippet = website_cache[idx:idx+150]
+        return f"Website info: {snippet}..."
+
+    # --- Step 4: Gemini fallback (only if nothing found) ---
+    menu_lines = [f"{item['title']} – Rs. {item['price']}"
+                  for cat in menu_dict.values() for item in cat]
+       
+    # ✅ Detect script type (roman / urdu / english)
+    script_type = detect_script(user_query)
+    if script_type == "roman":
+        language_rule = "Reply ONLY in Roman Urdu (Latin script, no Urdu letters, no full English sentences)."
+    elif script_type == "urdu":
+        language_rule = "Reply ONLY in Urdu script."
+    else:
+        language_rule = "Reply ONLY in English."
+    prompt = (
+        f"Restaurant Menu:\n" + "\n".join(menu_lines) +
+        f"\n\nUser said: {user_query}\n\n"
+        "👉 Instructions:\n"
+        f"- {language_rule}\n"
+        "- If the user asks about menu items, answer ONLY from the menu above.\n"
+        "- If item exists, mention it with exact price.\n"
+        "- If item does not exist in menu, reply with: ❌ Not available (in the user's language).\n"
+        "- If the user is not asking about food/menu, then answer politely in their language without ❌ message."
+    )
+
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    resp = model.generate_content(prompt)
+    return resp.text.strip()
+
 
 def detect_script(text):
     urdu_chars = re.compile(r'[\u0600-\u06FF]')  # Urdu Unicode range
@@ -454,13 +504,28 @@ def webhook(request):
         # 🌐 Website scraping + FAQ fallback
                 
         elif intent == "Default Fallback Intent":
-            reply = smart_query_handler(user_input, price_data)
+            # Agar input menu related lagta hai to smart_query_handler use karo
+            if any(word in user_input_lower for word in ["price", "menu", "pizza", "burger", "biryani", "item", "order"]):
+                reply = smart_query_handler(user_input, price_data)
+            else:
+                # General query → Gemini se handle
+                reply = query_gemini(user_input, price_data)
+
             response_payload = {
                 "fulfillmentMessages": [
                     {"text": {"text": [reply]}}
                 ]
             }
             return JsonResponse(response_payload)
+
+        # elif intent == "Default Fallback Intent":
+        #     reply = smart_query_handler(user_input, price_data)
+        #     response_payload = {
+        #         "fulfillmentMessages": [
+        #             {"text": {"text": [reply]}}
+        #         ]
+        #     }
+        #     return JsonResponse(response_payload)
 
 
 
@@ -812,7 +877,7 @@ def webhook(request):
                 <body>
                     <div style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; background-color: #fce3e1; padding: 30px; border-radius: 10px; color: #333;">
                         <div style="text-align: center;">
-                            <img src="https://foodsinn.co/_next/image?url=https%3A%2F%2Fconsole.indolj.io%2Fupload%2F1728388057-Foods-Inn-Original-Logo.png%3Fq%3D10&w=256&q=75" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
+                            <img src="https://drive.google.com/file/d/11tl-_2Z3KAiJa8dqR9pZ8oAEPfMEeZ_-/view?usp=sharing" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
                             <h2 style="color: #6B7564; font-size: 18px;">New Order Received!</h2>
                         </div>
 
@@ -900,7 +965,7 @@ def webhook(request):
                 <body>
                     <div class="container" style="max-width: 600px; margin: auto; font-family: Arial, sans-serif; background-color: #fce3e1; padding: 30px; border-radius: 10px; color: #333;" >
                         <div style="text-align: center;">
-                            <img src="https://foodsinn.co/_next/image?url=https%3A%2F%2Fconsole.indolj.io%2Fupload%2F1728388057-Foods-Inn-Original-Logo.png%3Fq%3D10&w=256&q=75" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
+                            <img src="https://drive.google.com/file/d/11tl-_2Z3KAiJa8dqR9pZ8oAEPfMEeZ_-/view?usp=sharing" alt="FoodsInn Logo" width="100" style="margin-bottom: 20px; ">
                             <h2 style="color: #6B7564; font-size: 18px;">Your Order detail !</h2>
                         </div>
 
@@ -996,6 +1061,15 @@ def webhook(request):
                 ]
             }
 
+        elif intent == "GreetingsIntent":
+            reply = query_gemini(user_input, price_data)
+            response_payload = {
+                "fulfillmentMessages": [
+                    {"text": {"text": [reply]}}
+                ]
+            }
+            
+
         # elif intent == "Default Fallback Intent":
         #     reply = query_gemini(user_input, price_data)
         #     return JsonResponse({   
@@ -1007,8 +1081,8 @@ def webhook(request):
 
         # ❓ Unknown input
         else:
-            #reply = query_gemini(user_input, price_data)
-            reply = smart_query_handler(user_input, price_data)
+            reply = query_gemini(user_input, price_data)
+            #reply = smart_query_handler(user_input, price_data)
             
             response_payload = {
                 "fulfillmentMessages": [
