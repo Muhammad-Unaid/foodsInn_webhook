@@ -29,9 +29,9 @@ from langdetect import detect
 
 
 # ───── Load ENV ─────
-load_dotenv()
+# load_dotenv()
 #-----------------------Gemini API ko configure karta hai.--------
-genai.configure(api_key="AIzaSyD2O9-NCQXiVv-L0EKX4bfGAoyaszvL7GY")
+genai.configure(api_key="AIzaSyBxesZ8IQUwvHcZDizgRij-wMhfkxJEbqQ")
 
 
 #global memory jaha website aur FAQ ka scraped data store hota hai----
@@ -136,8 +136,21 @@ def refresh_cache():
         # website_cache = scrape_website("https://foodsinn.co/")  
         # faq_cache = scrape_faqs("https://foodsinn.co/pages/frequently-asked-questions")
         
-        website_cache = scrape_dynamic_website("https://foodsinn.co/")
-        faq_cache = scrape_dynamic_website("https://foodsinn.co/pages/frequently-asked-questions")
+        # website_cache = scrape_dynamic_website("https://foodsinn.co/")
+        # faq_cache = scrape_dynamic_website("https://foodsinn.co/pages/frequently-asked-questions")
+        
+        try:
+            website_cache = scrape_dynamic_website("https://foodsinn.co/")
+        except Exception as e:
+            print("Website scrape failed:", e)
+            website_cache = ""
+
+        try:
+            faq_cache = scrape_dynamic_website("https://foodsinn.co/pages/frequently-asked-questions")
+        except Exception as e:
+            print("FAQ scrape failed:", e)
+            faq_cache = ""
+
 
 
         print("✅ Cache refreshed")
@@ -340,7 +353,7 @@ def query_gemini(user_query, menu_dict):
         "- If the user is not asking about food/menu, then answer politely in their language without ❌ message."
     )
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash-lite")
     resp = model.generate_content(prompt)
     return resp.text.strip()
 
@@ -368,7 +381,7 @@ def query_gemini_with_faq(user_query, url):
         "- If nothing relevant found: ❌ Ye info FAQs me available nahi hai.(in the user's language)"
     )
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash-lite")
     resp = model.generate_content(prompt)
     return resp.text.strip()
 
@@ -381,17 +394,38 @@ def ask_gemini(prompt):
 
 import concurrent.futures
 
+# def safe_llm_call(prompt, timeout=4):
+#     model = genai.GenerativeModel("gemini-1.5-flash")
+#     with concurrent.futures.ThreadPoolExecutor() as executor:
+#         future = executor.submit(lambda: model.generate_content(prompt).text)
+#         try:
+#             return future.result(timeout=timeout).strip()
+#         except concurrent.futures.TimeoutError:
+#             return "⚠️ Sorry, reply slow ho raha hai. Kripya dobara poochhiye."
+
 def safe_llm_call(prompt, timeout=4):
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        future = executor.submit(lambda: model.generate_content(prompt).text)
-        try:
-            return future.result(timeout=timeout).strip()
-        except concurrent.futures.TimeoutError:
-            return "⚠️ Sorry, reply slow ho raha hai. Kripya dobara poochhiye."
+    try:
+        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(lambda: model.generate_content(prompt))
+            response = future.result(timeout=timeout)
+            if response and getattr(response, "text", None):
+                return response.text.strip()
+            else:
+                return "⚠️ No response from Gemini."
+    except concurrent.futures.TimeoutError:
+        return "⚠️ Timeout: Gemini response slow hai."
+    except Exception as e:
+        print("⚠️ safe_llm_call error:", e)
+        return "⚠️ Gemini error occurred."
 
 
 
+def detect_script(text):
+    if not isinstance(text, str):
+        return "english"
+    urdu_chars = re.compile(r'[\u0600-\u06FF]')
+    ...
 
 
 

@@ -14,6 +14,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ab env se API key load karo
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+
+
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
